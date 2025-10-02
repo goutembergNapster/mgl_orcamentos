@@ -29,3 +29,49 @@ Importe `n8n_workflow_example.json` no n8n. Esse fluxo:
 > Compatibilidade: este pacote usa `printing:^5.12.0` para rodar no Flutter 3.19.x. 
 > Se atualizar o Flutter para >=3.22, você pode subir para `printing:^5.13.x`.
 # mgl_orcamentos
+
+
+
+MGL Orçamentos (Flutter)
+
+App Flutter para criação e gestão de orçamentos com cadastro de clientes e perfil profissional, geração de PDF, e (opcionalmente) envio para n8n via webhook.
+
+✨ Principais recursos
+
+Autenticação local com migração automática do formato legado
+
+Hash + salt (sha256) em SharedPreferences
+
+Suporte a login, cadastro e redefinição de senha
+
+Lembrar e-mail / sessão (armazenamento local)
+
+Perfil Profissional (com logo) usado no PDF
+
+Clientes
+
+Busca visível (texto escuro), paginação (10 em 10), edição e exclusão
+
+Deduplicação por telefone ou CPF/CNPJ
+
+Orçamentos
+
+Iniciar rapidamente pela Home (“+ Novo Orçamento”)
+
+Itens com descrição, quantidade, unidade, valor unitário, desconto/acréscimos
+
+Gerar PDF (compartilhar/imprimir) usando printing
+
+Reimprimir e Editar pela página de Orçamentos (por cliente)
+
+Após gerar PDF, a Home volta para o estado inicial (formulário fechado e campos limpos)
+
+n8n (futuro)
+
+Botão “Envio Auto” aparece desabilitado (visual de placeholder)
+
+Quando ativar, o envio usará WEBHOOK_URL do .env
+
+ViaCEP: preenchimento automático do endereço do cliente pelo CEP
+
+Tema com gradiente e tipografia consistente

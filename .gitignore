@@ -1,43 +1,79 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.buildlog/
-.history
-.svn/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# =========================
+# Flutter / Dart
+# =========================
 .dart_tool/
+.packages
+.pub-cache/
 .flutter-plugins
 .flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
+.flutter-versions
+.metadata
+.melos_tool/
 
-# Symbolication related
-app.*.symbols
+# Builds & artifacts
+build/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/.symlinks/
+**/ios/Pods/
+**/ios/DerivedData/
+**/ios/Runner/GeneratedPluginRegistrant.*
+**/macos/Flutter/ephemeral/
+**/macos/Pods/
+**/macos/Runner/GeneratedPluginRegistrant.*
+**/web/.dart_tool/
+**/linux/flutter/ephemeral/
+**/windows/flutter/ephemeral/
 
-# Obfuscation related
-app.*.map.json
+# Android
+**/android/.gradle/
+**/android/captures/
+**/android/local.properties
+**/android/app/**/*.keystore
+**/android/app/**/*.jks
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+**/android/key.properties
 
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+# Xcode
+**/*.xcworkspace/
+**/*.xcuserdatad/
+**/*.xcuserstate
+**/*.xcodeproj/project.xcworkspace/
+**/*.xcodeproj/xcuserdata/
+**/*.xcodeproj/xcshareddata/WorkspaceSettings.xcsettings
+**/DerivedData/
+
+# IDEs
+.vscode/
+.idea/
+*.iml
+
+# Logs & temp
+*.log
+*.lock.workspace
+pubspec_overrides.yaml
+coverage/
+.dart_tool/
+.merged_contacts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Misc generated
+**/.generated/
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
