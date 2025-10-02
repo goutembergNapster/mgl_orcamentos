@@ -1,0 +1,108 @@
+{
+  "name": "Orcamento criado → WhatsApp",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "orcamento_criado",
+        "options": {}
+      },
+      "id": "WebhookTrigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "const data = items[0].json;\nconst texto = `Olá ${data.cliente?.nome || ''}! Segue seu orçamento #${data.orcamento?.id || ''} (Total: R$ ${data.orcamento?.total || ''}).`;\nreturn [{ json: { texto, ...data } }];"
+      },
+      "id": "PrepareMessage",
+      "name": "Prepare message",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        540,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "requestMethod": "POST",
+        "url": "https://graph.facebook.com/v20.0/REPLACE_PHONE_ID/messages",
+        "jsonParameters": true,
+        "options": {},
+        "queryParametersUi": {
+          "parameter": []
+        },
+        "headersUi": {
+          "parameter": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REPLACE_WA_TOKEN"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "bodyParametersUi": {
+          "parameter": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "5581999999999"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "{ \"body\": $json[\"texto\"] }"
+            }
+          ]
+        }
+      },
+      "id": "SendWhatsApp",
+      "name": "WhatsApp Cloud API (texto)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        800,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Prepare message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare message": {
+      "main": [
+        [
+          {
+            "node": "WhatsApp Cloud API (texto)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

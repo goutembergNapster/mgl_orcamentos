@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+
+    <key>EXAppExtensionAttributes</key>
+    <dict>
+        <key>EXExtensionPointIdentifier</key>
+        <string>com.apple.accessory-setup-extension</string>
+    </dict>
+    <key>NSBluetoothServices</key>
+    <array>
+        <string>DBD19D99-9D04-4D92-9B87-321082C23438</string>
+    </array>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeDescription</key>
+            <string>Example Protocol Display Name</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data-access-protocol</string>
+            </array>
+            <key>UTTypeIdentifier</key>
+            <string>com.example.example-protocol</string>
+            <key>UTTypeIcons</key>
+            <dict>
+                <key>UTTypeSymbolName</key>
+                <string>ExampleProtocolIcon</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>

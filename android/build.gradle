@@ -1,0 +1,21 @@
+// Gradle 7.6.3 + AGP 7.4.2 (estável com Flutter 3.19.x)
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+    maven { url 'https://storage.googleapis.com/download.flutter.io' }
+  }
+  dependencies {
+    classpath "com.android.tools.build:gradle:7.4.2"
+    classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.8.22"
+  }
+}
+allprojects {
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://storage.googleapis.com/download.flutter.io' }
+  }
+}
+tasks.register("clean", Delete) { delete rootProject.buildDir }

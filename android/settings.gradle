@@ -1,0 +1,36 @@
+// settings.gradle compatível com Flutter (carrega plugins automaticamente)
+
+pluginManagement {
+  repositories {
+    google()
+    mavenCentral()
+    gradlePluginPortal()
+    // Artefatos nativos do Flutter
+    maven { url 'https://storage.googleapis.com/download.flutter.io' }
+  }
+}
+
+dependencyResolutionManagement {
+  repositories {
+    google()
+    mavenCentral()
+    maven { url 'https://storage.googleapis.com/download.flutter.io' }
+  }
+}
+
+rootProject.name = "orcamento_app"
+include(":app")
+
+// ===== Carrega o Flutter SDK e registra plugins Android automaticamente =====
+def localPropertiesFile = new File(rootProject.projectDir, "local.properties")
+def properties = new Properties()
+assert localPropertiesFile.exists()
+localPropertiesFile.withReader('UTF-8') { reader -> properties.load(reader) }
+
+def flutterSdkPath = properties.getProperty("flutter.sdk")
+assert flutterSdkPath != null : "Flutter SDK not found. Define flutter.sdk in local.properties."
+
+apply from: "$flutterSdkPath/packages/flutter_tools/gradle/app_plugin_loader.gradle"
+
+// (Opcional, ajuda em builds compostos)
+includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
