@@ -77,3 +77,22 @@ Thumbs.db
 **/*.g.dart
 **/*.freezed.dart
 **/*.mocks.dart
+
+
+# --- Android builds grandes ---
+android/app/build/
+android/app/outputs/
+android/app/intermediates/
+android/**/build/
+**/merged_native_libs/
+**/incremental/
+**/intermediates/
+**/flutter_assets/
+**/kernel_blob.bin
+*.apk
+*.aab
+
+# --- Flutter build genérico ---
+build/
+.dart_tool/
+
