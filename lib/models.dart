@@ -10,6 +10,7 @@ class Profissional {
   final String cidade;
   final String uf;
   final String cep;
+  final String? cpfCnpj;
 
   Profissional({
     required this.nome,
@@ -21,6 +22,7 @@ class Profissional {
     this.cidade = '',
     this.uf = '',
     this.cep = '',
+    this.cpfCnpj,
   });
 
   Map<String, dynamic> toJson() => {
@@ -86,6 +88,7 @@ class Cliente {
         'bairro': bairro,
         'cidade': cidade,
         'uf': uf,
+        if (cpfCnpj != null) 'cpfCnpj': cpfCnpj,
       };
 
   factory Cliente.fromJson(Map<String, dynamic> j) => Cliente(

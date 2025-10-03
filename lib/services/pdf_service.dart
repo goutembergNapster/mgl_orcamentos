@@ -1,3 +1,4 @@
+// lib/services/pdf_service.dart
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
@@ -6,8 +7,6 @@ import 'package:pdf/widgets.dart' as pw;
 
 import 'package:orcamento_app/models.dart';
 
-/// Tenta carregar uma fonte TTF do assets. Se falhar (arquivo ausente ou vazio),
-/// retorna a fonte fallback (Helvetica, por padrão).
 Future<pw.Font> _safeLoadTtf(String assetPath, {pw.Font? fallback}) async {
   try {
     final data = await rootBundle.load(assetPath);
@@ -20,7 +19,23 @@ Future<pw.Font> _safeLoadTtf(String assetPath, {pw.Font? fallback}) async {
   return fallback ?? pw.Font.helvetica();
 }
 
-/// Gera um PDF no layout do mock com fallback de fonte robusto.
+pw.Widget _watermark(Uint8List? bytes) {
+  if (bytes == null || bytes.isEmpty) return pw.SizedBox();
+  return pw.Opacity(
+    opacity: 0.08, // bem discreto
+    child: pw.Center(
+      child: pw.Image(
+        pw.MemoryImage(bytes),
+        width: 320, // tamanho seguro para A4
+        height: 320,
+        fit: pw.BoxFit.contain,
+      ),
+    ),
+  );
+}
+
+/// Gera um PDF no layout do mock com fallback de fonte robusto
+/// e com marca d'água leve centralizada (logo do cliente).
 Future<Uint8List> gerarPdfBytes(
   Orcamento orc, {
   Uint8List? logoBytes,
@@ -46,36 +61,24 @@ Future<Uint8List> gerarPdfBytes(
 
   final itens = orc.itens ?? <ItemOrcamento>[];
 
-  pw.Widget title() => pw.Column(
+  // ====== HEADER (sem marca da app; só info do orçamento) ======
+  pw.Widget headerLeft() => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Text(
-            'MGL Orçamentos',
-            style: pw.TextStyle(
-              font: robotoBold,
-              color: PdfColor.fromInt(0xFF1E40AF),
-              fontSize: 24,
-            ),
+            'ORÇAMENTO #${s(orc.id)}',
+            style: pw.TextStyle(font: robotoBold, fontSize: 14),
           ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            'Data: ${fmtDate(orc.data)}',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+          pw.SizedBox(height: 8),
           pw.Container(
             width: 190,
             height: 3,
-            margin: const pw.EdgeInsets.only(top: 2, bottom: 10),
             color: PdfColor.fromInt(0xFF2563EB),
-          ),
-          pw.Row(
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              pw.Text(
-                'ORÇAMENTO #${s(orc.id)}',
-                style: pw.TextStyle(font: robotoBold, fontSize: 10),
-              ),
-              pw.SizedBox(width: 12),
-              pw.Text(
-                'Data: ${fmtDate(orc.data)}',
-                style: const pw.TextStyle(fontSize: 10),
-              ),
-            ],
           ),
         ],
       );
@@ -105,6 +108,7 @@ Future<Uint8List> gerarPdfBytes(
     );
   }
 
+  // ====== BLOCOS DE DADOS ======
   pw.Widget blocoProfissional() => pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
@@ -128,7 +132,7 @@ Future<Uint8List> gerarPdfBytes(
               s(orc.profissional.uf).isNotEmpty)
             pw.Text(
               '${s(orc.profissional.bairro)}'
-              '${s(orc.profissional.bairro).isNotEmpty && (s(orc.profissional.cidade).isNotEmpty || s(orc.profissional.uf).isNotEmpty) ? ' • ' : ''}'
+              '${s(orc.profissional.bairro).isNotEmpty && (s(orc.profissional.cidade).isNotEmpty || s(orc.profissional.uf).isNotEmpty) ? ' - ' : ''}'
               '${s(orc.profissional.cidade)}'
               '${s(orc.profissional.uf).isNotEmpty ? ' - ${s(orc.profissional.uf)}' : ''}',
               style: const pw.TextStyle(fontSize: 10),
@@ -145,7 +149,8 @@ Future<Uint8List> gerarPdfBytes(
           pw.Text('Cliente', style: pw.TextStyle(font: robotoBold, fontSize: 12)),
           pw.Text(s(orc.cliente.nome), style: const pw.TextStyle(fontSize: 11)),
           if (s(orc.cliente.telefone).isNotEmpty)
-            pw.Text(s(orc.cliente.telefone), style: const pw.TextStyle(fontSize: 10)),
+            pw.Text(s(orc.cliente.telefone),
+                style: const pw.TextStyle(fontSize: 10)),
           if (s(orc.cliente.placa).isNotEmpty)
             pw.Text('Placa: ${s(orc.cliente.placa)}',
                 style: const pw.TextStyle(fontSize: 10)),
@@ -174,7 +179,7 @@ Future<Uint8List> gerarPdfBytes(
                 s(orc.cliente.uf).isNotEmpty)
               pw.Text(
                 '${s(orc.cliente.bairro)}'
-                '${s(orc.cliente.bairro).isNotEmpty && (s(orc.cliente.cidade).isNotEmpty || s(orc.cliente.uf).isNotEmpty) ? ' • ' : ''}'
+                '${s(orc.cliente.bairro).isNotEmpty && (s(orc.cliente.cidade).isNotEmpty || s(orc.cliente.uf).isNotEmpty) ? ' - ' : ''}'
                 '${s(orc.cliente.cidade)}'
                 '${s(orc.cliente.uf).isNotEmpty ? ' - ${s(orc.cliente.uf)}' : ''}',
                 style: const pw.TextStyle(fontSize: 10),
@@ -224,8 +229,8 @@ Future<Uint8List> gerarPdfBytes(
           decoration: pw.BoxDecoration(gradient: headerGrad),
           children: headers
               .map((h) => pw.Padding(
-                    padding:
-                        const pw.EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                    padding: const pw.EdgeInsets.symmetric(
+                        vertical: 8, horizontal: 6),
                     child: pw.Text(
                       h,
                       style: pw.TextStyle(
@@ -246,7 +251,7 @@ Future<Uint8List> gerarPdfBytes(
                           vertical: 6, horizontal: 6),
                       child: pw.Text(
                         c,
-                        style: const pw.TextStyle(fontSize: 10), // texto escuro
+                        style: const pw.TextStyle(fontSize: 10),
                       ),
                     ))
                 .toList(),
@@ -280,17 +285,19 @@ Future<Uint8List> gerarPdfBytes(
     );
   }
 
-  final doc = <pw.Widget>[
-    // Topo: título + logo
+  // ====== DOCUMENTO (conteúdo) ======
+  final content = <pw.Widget>[
+    // Topo: sem título da app; só dados do orçamento + logo
     pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Expanded(child: title()),
+        pw.Expanded(child: headerLeft()),
         logoBox(),
       ],
     ),
     pw.SizedBox(height: 16),
+
     // Profissional x Cliente
     pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -301,33 +308,47 @@ Future<Uint8List> gerarPdfBytes(
       ],
     ),
     pw.SizedBox(height: 14),
+
     // Tabela
     tabelaItens(),
     pw.SizedBox(height: 10),
+
     // Totais à direita
     pw.Row(
       mainAxisAlignment: pw.MainAxisAlignment.end,
       children: [boxTotais()],
     ),
+
     // Observações
     if (s(orc.observacoes).isNotEmpty) ...[
       pw.SizedBox(height: 18),
       pw.Text('Observações',
           style: pw.TextStyle(font: robotoBold, fontSize: 12)),
-      pw.SizedBox(height: 4),
-      pw.Text(s(orc.observacoes), style: const pw.TextStyle(fontSize: 11)),
+      pw.SizedBox(height: 6),
+      // Observações já chegam formatadas (linhas com "- ") pelo Home
+      pw.Text(
+        s(orc.observacoes),
+        style: const pw.TextStyle(fontSize: 11),
+      ),
     ],
+
     pw.SizedBox(height: 14),
     pw.Text(
-      'Validade: 7 dias • Preços sujeitos à alteração conforme escopo.',
-      style: pw.TextStyle(color: PdfColors.grey600, fontSize: 9),
+      'Validade: 7 dias : Preços sujeitos à alteração sem aviso prévio.',
+      style: pw.TextStyle(color: PdfColors.grey600, fontSize: 10),
     ),
   ];
 
+  // ====== PÁGINA COM MARCA D’ÁGUA (logo central) ======
+  final pageTheme = pw.PageTheme(
+    margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 32),
+    buildBackground: (ctx) => _watermark(logoBytes),
+  );
+
   pdf.addPage(
     pw.MultiPage(
-      margin: const pw.EdgeInsets.fromLTRB(24, 24, 24, 32),
-      build: (_) => doc,
+      pageTheme: pageTheme,
+      build: (_) => content,
     ),
   );
 
