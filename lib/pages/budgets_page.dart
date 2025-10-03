@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
+import 'package:pdf/pdf.dart'; // <- para PdfPageFormat
 
 import 'package:orcamento_app/models.dart';
 import 'package:orcamento_app/services/storage_service.dart';
@@ -122,13 +123,49 @@ class _BudgetsPageState extends State<BudgetsPage> {
     }
   }
 
-   Future<void> _edit(Orcamento o) async {
+  Future<void> _edit(Orcamento o) async {
     // Agora abrimos a Home já com o orçamento carregado
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => home.HomePage(orcToEdit: o)),
     );
     await _load();
   }
+
+  // ===== NOVO: Pré-visualização com compartilhar/imprimir (lupa) =====
+  void _preview(Orcamento o) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          appBar: AppBar(
+            title: Text('Orçamento #${o.id}'),
+            // mesmo gradiente usado aqui na BudgetsPage
+            flexibleSpace: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF0C1220), Color(0xFF17273F)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
+            ),
+            elevation: 0,
+          ),
+          body: PdfPreview(
+            build: (PdfPageFormat format) async {
+              return gerarPdfBytes(o, logoBytes: _logoBytes);
+            },
+            allowPrinting: true,
+            allowSharing: true,
+            canChangePageFormat: false,
+            canChangeOrientation: false,
+            pdfFileName: 'orcamento_${o.id}.pdf',
+            initialPageFormat: PdfPageFormat.a4,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final onPrimary = Theme.of(context).colorScheme.onPrimary;
@@ -240,6 +277,13 @@ class _BudgetsPageState extends State<BudgetsPage> {
                             trailing: Wrap(
                               spacing: 0,
                               children: [
+                                // NOVO: visualizar (lupa) com preview/compartilhar
+                                IconButton(
+                                  tooltip: 'Visualizar',
+                                  onPressed: () => _preview(o),
+                                  icon: const Icon(Icons.search,
+                                      color: Colors.black54),
+                                ),
                                 IconButton(
                                   tooltip: 'Reimprimir (PDF)',
                                   onPressed: () => _reprint(o),
@@ -260,6 +304,8 @@ class _BudgetsPageState extends State<BudgetsPage> {
                                 ),
                               ],
                             ),
+                            // (opcional) tocar no card também abre preview:
+                            // onTap: () => _preview(o),
                           ),
                         );
                       },

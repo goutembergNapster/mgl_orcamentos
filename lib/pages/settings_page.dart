@@ -1,3 +1,4 @@
+// lib/pages/settings_page.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -9,6 +10,7 @@ import 'package:http/http.dart' as http;
 import '../models.dart';
 import '../services/storage_service.dart';
 import '../widgets/theme.dart';
+import '../widgets/cpf_cnpj_formatter.dart'; // 👈 máscara dinâmica CPF/CNPJ
 import 'clients_page.dart';
 import 'home_page.dart';
 import 'login_page.dart';
@@ -36,6 +38,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _profNome = TextEditingController();
   final _profTelefone = TextEditingController();
   final _profSegmento = TextEditingController();
+  final _profCpfCnpj = TextEditingController(); // 👈 NOVO
   final _cep = TextEditingController();
   final _logradouro = TextEditingController();
   final _numero = TextEditingController();
@@ -83,6 +86,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _profNome,
       _profTelefone,
       _profSegmento,
+      _profCpfCnpj, // 👈 NOVO
       _cep,
       _logradouro,
       _numero,
@@ -114,6 +118,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _profNome.text = p.nome;
         _profTelefone.text = p.telefone;
         _profSegmento.text = p.segmento;
+        _profCpfCnpj.text = p.cpfCnpj ?? ''; // 👈 NOVO
         _logradouro.text = p.logradouro;
         _numero.text = p.numero;
         _bairro.text = p.bairro;
@@ -251,6 +256,9 @@ class _SettingsPageState extends State<SettingsPage> {
       cidade: _cidade.text.trim(),
       uf: _uf.text.trim(),
       cep: _cep.text.trim(),
+      cpfCnpj: _profCpfCnpj.text.trim().isEmpty
+          ? null
+          : _profCpfCnpj.text.trim(), // 👈 NOVO
     );
     await store.savePerfilProfissional(p);
     await store.setWebhookUrl(_webhook.text.trim());
@@ -288,6 +296,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _profNome.clear();
       _profTelefone.clear();
       _profSegmento.clear();
+      _profCpfCnpj.clear(); // 👈 NOVO
       _logradouro.clear();
       _numero.clear();
       _bairro.clear();
@@ -608,6 +617,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 8),
         _kv('Nome', p.nome),
         _kv('Telefone', p.telefone),
+        if ((p.cpfCnpj ?? '').trim().isNotEmpty) _kv('CPF/CNPJ', p.cpfCnpj!), // 👈 NOVO
         if (p.segmento.trim().isNotEmpty) _kv('Segmento', p.segmento),
         const SizedBox(height: 6),
         _kv(
@@ -691,6 +701,18 @@ class _SettingsPageState extends State<SettingsPage> {
               keyboardType: TextInputType.phone,
               validator: _req,
             ),
+
+            // 👇 NOVO: CPF/CNPJ do Profissional (máscara dinâmica)
+            TextFormField(
+              controller: _profCpfCnpj,
+              keyboardType: TextInputType.number,
+              inputFormatters: const [CpfCnpjInputFormatter()],
+              decoration: const InputDecoration(
+                labelText: 'CPF ou CNPJ (Profissional)',
+                prefixIcon: Icon(Icons.badge_outlined),
+              ),
+            ),
+
             TextFormField(
               controller: _profSegmento,
               decoration: const InputDecoration(
@@ -781,6 +803,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         _profNome.text = p.nome;
                         _profTelefone.text = p.telefone;
                         _profSegmento.text = p.segmento;
+                        _profCpfCnpj.text = p.cpfCnpj ?? ''; // 👈 NOVO
                         _logradouro.text = p.logradouro;
                         _numero.text = p.numero;
                         _bairro.text = p.bairro;

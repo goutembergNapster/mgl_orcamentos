@@ -10,10 +10,9 @@ import 'package:intl/intl.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:printing/printing.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import '../widgets/cpf_cnpj_formatter.dart';
 
 import '../models.dart';
-import '../services/n8n_client.dart';
 import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
 
@@ -551,11 +550,13 @@ class _HomePageState extends State<HomePage> {
     final List<Widget> docAddrAndCustom = [
       TextFormField(
         controller: _cliCpfCnpj,
-        inputFormatters: [_maskCpfCnpjFormatter],
+        inputFormatters: const [CpfCnpjInputFormatter()],
+        maxLength: 18,
         keyboardType: TextInputType.number,
         decoration: const InputDecoration(
           labelText: 'CPF ou CNPJ',
           prefixIcon: Icon(Icons.badge_outlined),
+          
         ),
         onChanged: (_) => setState(() {}),
       ),
@@ -969,11 +970,14 @@ class _HomePageState extends State<HomePage> {
       final id = await store.nextOrcId();
 
       final extras = _cliCustom.entries
-          .where((e) => e.value.text.trim().isNotEmpty)
-          .map((e) => '${e.key}: ${e.value.text.trim()}')
-          .toList();
-      final extraObs =
-          extras.isEmpty ? '' : '\n\nCampos extras: ${extras.join(' • ')}';
+    .where((e) => e.value.text.trim().isNotEmpty)
+    .map((e) => '${e.key}: ${e.value.text.trim()}')
+    .toList();
+
+    // Apresentação mais limpa (uma por linha) e sem o caractere "•"
+    final extraObs = extras.isEmpty
+    ? ''
+    : '\n\nCampos extras:\n- ' + extras.join('\n- ');
 
       final orcBase = _buildOrcamentoWithId(id);
       final obs = _obs.text.trim();
@@ -1026,43 +1030,51 @@ class _HomePageState extends State<HomePage> {
   }
 
   // Constrói o orçamento usando o perfil salvo
-  Orcamento _buildOrcamentoWithId(String id) {
-    final profissional = _perfil ??
-        Profissional(
-          nome: '',
-          telefone: '',
-          segmento: '',
-          logradouro: '',
-          numero: '',
-          bairro: '',
-          cidade: '',
-          uf: '',
-          cep: '',
-        );
+ // Constrói o orçamento usando o perfil salvo
+Orcamento _buildOrcamentoWithId(String id) {
+  final profissional = _perfil ??
+      Profissional(
+        nome: '',
+        telefone: '',
+        segmento: '',
+        logradouro: '',
+        numero: '',
+        bairro: '',
+        cidade: '',
+        uf: '',
+        cep: '',
+      );
 
-    final desconto = double.tryParse(_desconto.text.replaceAll(',', '.')) ?? 0;
-    final acresc =
-        double.tryParse(_acrescimos.text.replaceAll(',', '.')) ?? 0;
+  final desconto = double.tryParse(_desconto.text.replaceAll(',', '.')) ?? 0;
+  final acresc = double.tryParse(_acrescimos.text.replaceAll(',', '.')) ?? 0;
 
-    final cliente = Cliente(
-      nome: _cliNome.text.trim(),
-      telefone: _cliTelefone.text.trim(),
-      placa: null,
-    );
+  final cliente = Cliente(
+    nome: _cliNome.text.trim(),
+    telefone: _cliTelefone.text.trim(),
+    placa: null,
 
-    return Orcamento(
-      id: id,
-      profissional: profissional,
-      cliente: cliente,
-      data: DateTime.now(),
-      itens: List.from(_itens),
-      desconto: desconto,
-      acrescimos: acresc,
-      observacoes: _obs.text.trim().isEmpty ? null : _obs.text.trim(),
-    );
-  }
+    // >>> CAMPOS NOVOS QUE NÃO ESTAVAM SENDO PREENCHIDOS <<<
+    cpfCnpj: _cliCpfCnpj.text.trim().isEmpty ? null : _cliCpfCnpj.text.trim(),
+    cep: _cliCep.text.trim().isEmpty ? null : _cliCep.text.trim(),
+    logradouro: _cliLogradouro.text.trim().isEmpty ? null : _cliLogradouro.text.trim(),
+    numero: _cliNumero.text.trim().isEmpty ? null : _cliNumero.text.trim(),
+    bairro: _cliBairro.text.trim().isEmpty ? null : _cliBairro.text.trim(),
+    cidade: _cliCidade.text.trim().isEmpty ? null : _cliCidade.text.trim(),
+    uf: _cliUf.text.trim().isEmpty ? null : _cliUf.text.trim(),
+  );
+
+  return Orcamento(
+    id: id,
+    profissional: profissional,
+    cliente: cliente,
+    data: DateTime.now(),
+    itens: List.from(_itens),
+    desconto: desconto,
+    acrescimos: acresc,
+    observacoes: _obs.text.trim().isEmpty ? null : _obs.text.trim(),
+  );
 }
-
+}
 class _VersionBadge extends StatelessWidget {
   const _VersionBadge();
 
