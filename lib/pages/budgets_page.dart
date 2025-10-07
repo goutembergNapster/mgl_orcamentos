@@ -1,13 +1,13 @@
-// lib/pages/budgets_page.dart
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
-import 'package:pdf/pdf.dart'; // <- para PdfPageFormat
 
 import 'package:orcamento_app/models.dart';
 import 'package:orcamento_app/services/storage_service.dart';
 import 'package:orcamento_app/services/pdf_service.dart';
+import 'package:pdf/pdf.dart' show PdfPageFormat;
 
 // Se você quiser abrir a Home a partir daqui, importe com alias
 import 'home_page.dart' as home;
@@ -34,16 +34,20 @@ class _BudgetsPageState extends State<BudgetsPage> {
 
   Uint8List? _logoBytes;
 
+  // debounce da busca
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
     _load();
-    _q.addListener(_applyFilter);
+    _q.addListener(_onQueryChanged);
   }
 
   @override
   void dispose() {
     _q.dispose();
+    _debounce?.cancel();
     super.dispose();
   }
 
@@ -73,19 +77,26 @@ class _BudgetsPageState extends State<BudgetsPage> {
     });
   }
 
+  void _onQueryChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), _applyFilter);
+  }
+
   void _applyFilter() {
-    final s = _q.text.trim().toLowerCase();
+    final sRaw = _q.text;
+    final s = sRaw.trim().toLowerCase();
     setState(() {
       if (s.isEmpty) {
         _filtered = List.from(_all);
       } else {
+        final digits = s.replaceAll(RegExp(r'\D'), '');
         _filtered = _all.where((o) {
           final id = o.id.toLowerCase();
           final nome = o.cliente.nome.toLowerCase();
           final telDigits = o.cliente.telefone.replaceAll(RegExp(r'\D'), '');
           final inId = id.contains(s);
           final inNome = nome.contains(s);
-          final inTel = telDigits.contains(s.replaceAll(RegExp(r'\D'), ''));
+          final inTel = digits.isNotEmpty && telDigits.contains(digits);
           return inId || inNome || inTel;
         }).toList();
       }
@@ -123,47 +134,30 @@ class _BudgetsPageState extends State<BudgetsPage> {
     }
   }
 
+  // 🔎 Pré-visualização com opção nativa de compartilhar/imprimir
+  Future<void> _preview(Orcamento o) async {
+    try {
+      await Printing.layoutPdf(
+        onLayout: (PdfPageFormat format) async {
+          final bytes = await gerarPdfBytes(o, logoBytes: _logoBytes);
+          return bytes;
+        },
+        name: 'orcamento_${o.id}.pdf',
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Falha ao visualizar: $e')),
+      );
+    }
+  }
+
   Future<void> _edit(Orcamento o) async {
-    // Agora abrimos a Home já com o orçamento carregado
+    // Abre a Home já com o orçamento carregado
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => home.HomePage(orcToEdit: o)),
     );
     await _load();
-  }
-
-  // ===== NOVO: Pré-visualização com compartilhar/imprimir (lupa) =====
-  void _preview(Orcamento o) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => Scaffold(
-          appBar: AppBar(
-            title: Text('Orçamento #${o.id}'),
-            // mesmo gradiente usado aqui na BudgetsPage
-            flexibleSpace: Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF0C1220), Color(0xFF17273F)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-            ),
-            elevation: 0,
-          ),
-          body: PdfPreview(
-            build: (PdfPageFormat format) async {
-              return gerarPdfBytes(o, logoBytes: _logoBytes);
-            },
-            allowPrinting: true,
-            allowSharing: true,
-            canChangePageFormat: false,
-            canChangeOrientation: false,
-            pdfFileName: 'orcamento_${o.id}.pdf',
-            initialPageFormat: PdfPageFormat.a4,
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -204,6 +198,7 @@ class _BudgetsPageState extends State<BudgetsPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: TextField(
               controller: _q,
+              onChanged: (_) => _onQueryChanged(),
               style: const TextStyle(color: Colors.black87),
               decoration: const InputDecoration(
                 filled: true,
@@ -277,25 +272,27 @@ class _BudgetsPageState extends State<BudgetsPage> {
                             trailing: Wrap(
                               spacing: 0,
                               children: [
-                                // NOVO: visualizar (lupa) com preview/compartilhar
+                                // 🔎 Lupa (pré-visualizar)
                                 IconButton(
-                                  tooltip: 'Visualizar',
+                                  tooltip: 'Visualizar (PDF)',
                                   onPressed: () => _preview(o),
-                                  icon: const Icon(Icons.search,
-                                      color: Colors.black54),
+                                  icon: const Icon(Icons.search, color: Colors.black54),
                                 ),
+                                // Reimprimir / compartilhar direto
                                 IconButton(
                                   tooltip: 'Reimprimir (PDF)',
                                   onPressed: () => _reprint(o),
                                   icon: const Icon(Icons.picture_as_pdf,
                                       color: Colors.black54),
                                 ),
+                                // Editar
                                 IconButton(
                                   tooltip: 'Editar (abre Home)',
                                   onPressed: () => _edit(o),
                                   icon: const Icon(Icons.edit_outlined,
                                       color: Colors.black54),
                                 ),
+                                // Excluir
                                 IconButton(
                                   tooltip: 'Excluir',
                                   onPressed: () => _delete(o),
@@ -304,8 +301,6 @@ class _BudgetsPageState extends State<BudgetsPage> {
                                 ),
                               ],
                             ),
-                            // (opcional) tocar no card também abre preview:
-                            // onTap: () => _preview(o),
                           ),
                         );
                       },

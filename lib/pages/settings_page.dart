@@ -1,4 +1,3 @@
-// lib/pages/settings_page.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -10,7 +9,6 @@ import 'package:http/http.dart' as http;
 import '../models.dart';
 import '../services/storage_service.dart';
 import '../widgets/theme.dart';
-import '../widgets/cpf_cnpj_formatter.dart'; // 👈 máscara dinâmica CPF/CNPJ
 import 'clients_page.dart';
 import 'home_page.dart';
 import 'login_page.dart';
@@ -38,7 +36,6 @@ class _SettingsPageState extends State<SettingsPage> {
   final _profNome = TextEditingController();
   final _profTelefone = TextEditingController();
   final _profSegmento = TextEditingController();
-  final _profCpfCnpj = TextEditingController(); // 👈 NOVO
   final _cep = TextEditingController();
   final _logradouro = TextEditingController();
   final _numero = TextEditingController();
@@ -48,10 +45,15 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _editingProfile = true;
   Profissional? _perfilAtual;
 
-  // CEP (profissional) – igual à Home
+  // CEP (profissional) – igual à Home, mas com “latch” de erro
   final _cepFocus = FocusNode();
   Timer? _cepDebounce;
   bool _buscandoProfCep = false;
+
+  // 🔒 quando der erro uma vez, não tenta de novo sozinho até o usuário
+  // editar o campo CEP novamente.
+  bool _cepLookupLatched = false;
+  bool _cepUserEdited = false;
 
   // --- CAMPOS PERSONALIZADOS ---
   final _newFieldCtrl = TextEditingController();
@@ -86,7 +88,6 @@ class _SettingsPageState extends State<SettingsPage> {
       _profNome,
       _profTelefone,
       _profSegmento,
-      _profCpfCnpj, // 👈 NOVO
       _cep,
       _logradouro,
       _numero,
@@ -118,7 +119,6 @@ class _SettingsPageState extends State<SettingsPage> {
         _profNome.text = p.nome;
         _profTelefone.text = p.telefone;
         _profSegmento.text = p.segmento;
-        _profCpfCnpj.text = p.cpfCnpj ?? ''; // 👈 NOVO
         _logradouro.text = p.logradouro;
         _numero.text = p.numero;
         _bairro.text = p.bairro;
@@ -256,14 +256,16 @@ class _SettingsPageState extends State<SettingsPage> {
       cidade: _cidade.text.trim(),
       uf: _uf.text.trim(),
       cep: _cep.text.trim(),
-      cpfCnpj: _profCpfCnpj.text.trim().isEmpty
-          ? null
-          : _profCpfCnpj.text.trim(), // 👈 NOVO
     );
     await store.savePerfilProfissional(p);
     await store.setWebhookUrl(_webhook.text.trim());
     _perfilAtual = p;
-    setState(() => _editingProfile = false);
+    setState(() {
+      _editingProfile = false;
+      // Ao salvar, “destrava” o latch de CEP (se usuário quiser buscar de novo)
+      _cepLookupLatched = false;
+      _cepUserEdited = false;
+    });
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Dados do profissional salvos!')));
@@ -296,14 +298,17 @@ class _SettingsPageState extends State<SettingsPage> {
       _profNome.clear();
       _profTelefone.clear();
       _profSegmento.clear();
-      _profCpfCnpj.clear(); // 👈 NOVO
       _logradouro.clear();
       _numero.clear();
       _bairro.clear();
       _cidade.clear();
       _uf.clear();
       _cep.clear();
-      setState(() => _editingProfile = true);
+      setState(() {
+        _editingProfile = true;
+        _cepLookupLatched = false;
+        _cepUserEdited = false;
+      });
 
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -315,13 +320,17 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  // ===== CEP (profissional) — igual à Home =====
+  // ===== CEP (profissional) — com debounce e “latch” de erro =====
   void _debouncedCepListener() {
+    // Só tenta se o usuário editou e não está “travado” por erro
+    if (!_cepUserEdited || _cepLookupLatched) return;
+
     _cepDebounce?.cancel();
     _cepDebounce = Timer(const Duration(milliseconds: 350), _fetchProfCepIfReady);
   }
 
   Future<void> _fetchProfCepIfReady() async {
+    if (_cepLookupLatched) return; // travado após erro
     final digits = _cep.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (_buscandoProfCep || digits.length != 8) return;
     setState(() => _buscandoProfCep = true);
@@ -331,28 +340,31 @@ class _SettingsPageState extends State<SettingsPage> {
           .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       if (r.statusCode != 200) {
-        _showCepError();
+        _latchCepError();
         return;
       }
       final j = jsonDecode(r.body);
       if (j is Map && j['erro'] == true) {
-        _showCepError();
+        _latchCepError();
         return;
       }
-      // Preenche campos (permite digitar manualmente depois, se quiser)
+      // Preenche campos
       _logradouro.text = (j['logradouro'] ?? '').toString();
       _bairro.text = (j['bairro'] ?? '').toString();
       _cidade.text = (j['localidade'] ?? '').toString();
       _uf.text = (j['uf'] ?? '').toString().toUpperCase();
     } catch (_) {
       if (!mounted) return;
-      _showCepError();
+      _latchCepError();
     } finally {
       if (mounted) setState(() => _buscandoProfCep = false);
     }
   }
 
-  void _showCepError() {
+  void _latchCepError() {
+    // Mostra o alerta uma única vez e trava novas buscas até o usuário editar o CEP
+    _cepLookupLatched = true;
+    _cepUserEdited = false; // precisa editar novamente para destravar
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
@@ -617,7 +629,6 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 8),
         _kv('Nome', p.nome),
         _kv('Telefone', p.telefone),
-        if ((p.cpfCnpj ?? '').trim().isNotEmpty) _kv('CPF/CNPJ', p.cpfCnpj!), // 👈 NOVO
         if (p.segmento.trim().isNotEmpty) _kv('Segmento', p.segmento),
         const SizedBox(height: 6),
         _kv(
@@ -637,7 +648,10 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             FilledButton.icon(
               style: _filledPrimaryStyle,
-              onPressed: () => setState(() => _editingProfile = true),
+              onPressed: () => setState(() {
+                _editingProfile = true;
+                // Ao entrar no modo de edição, o próximo onChanged destrava o latch
+              }),
               icon: const Icon(Icons.edit_outlined),
               label: const Text('Editar'),
             ),
@@ -701,18 +715,6 @@ class _SettingsPageState extends State<SettingsPage> {
               keyboardType: TextInputType.phone,
               validator: _req,
             ),
-
-            // 👇 NOVO: CPF/CNPJ do Profissional (máscara dinâmica)
-            TextFormField(
-              controller: _profCpfCnpj,
-              keyboardType: TextInputType.number,
-              inputFormatters: const [CpfCnpjInputFormatter()],
-              decoration: const InputDecoration(
-                labelText: 'CPF ou CNPJ (Profissional)',
-                prefixIcon: Icon(Icons.badge_outlined),
-              ),
-            ),
-
             TextFormField(
               controller: _profSegmento,
               decoration: const InputDecoration(
@@ -730,6 +732,11 @@ class _SettingsPageState extends State<SettingsPage> {
               child: TextFormField(
                 controller: _cep,
                 keyboardType: TextInputType.number,
+                onChanged: (_) {
+                  // usuário mexeu -> pode tentar novamente
+                  _cepUserEdited = true;
+                  _cepLookupLatched = false;
+                },
                 decoration: InputDecoration(
                   labelText: 'CEP',
                   prefixIcon: const Icon(Icons.location_on_outlined),
@@ -803,13 +810,15 @@ class _SettingsPageState extends State<SettingsPage> {
                         _profNome.text = p.nome;
                         _profTelefone.text = p.telefone;
                         _profSegmento.text = p.segmento;
-                        _profCpfCnpj.text = p.cpfCnpj ?? ''; // 👈 NOVO
                         _logradouro.text = p.logradouro;
                         _numero.text = p.numero;
                         _bairro.text = p.bairro;
                         _cidade.text = p.cidade;
                         _uf.text = p.uf;
                         _cep.text = p.cep;
+                        // cancelar: trava novamente até o próximo onChanged
+                        _cepLookupLatched = false;
+                        _cepUserEdited = false;
                       });
                     },
                     icon: const Icon(Icons.close),

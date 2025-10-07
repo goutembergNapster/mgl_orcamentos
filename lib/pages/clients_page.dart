@@ -1,4 +1,5 @@
 // lib/pages/clients_page.dart
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 
@@ -10,8 +11,6 @@ import 'home_page.dart' as home;
 import 'settings_page.dart';
 import 'login_page.dart';
 import 'budgets_page.dart' as budgets;
-
-
 
 class ClientsPage extends StatefulWidget {
   const ClientsPage({super.key});
@@ -34,16 +33,20 @@ class _ClientsPageState extends State<ClientsPage> {
   Uint8List? _logoBytes;
   String _profNome = '';
 
+  // debounce da busca (como em Orçamentos)
+  Timer? _debounce;
+
   @override
   void initState() {
     super.initState();
     _loadHeader();
     _load();
-    _q.addListener(_apply);
+    _q.addListener(_onQueryChanged);
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _q.dispose();
     super.dispose();
   }
@@ -73,23 +76,45 @@ class _ClientsPageState extends State<ClientsPage> {
       _filtered = List.from(list);
       _visible = 10; // reseta a paginação ao recarregar
     });
+
+    // se já tem texto, reaplica (mantém comportamento enquanto digita)
+    if (_q.text.trim().isNotEmpty) {
+      _apply();
+    }
+  }
+
+  // === Helpers de normalização (iguais ao raciocínio da tela de Orçamentos) ===
+  String _norm(String s) => s.trim().toLowerCase();
+  String _digits(String s) => s.replaceAll(RegExp(r'\D'), '');
+  String _alnum(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  void _onQueryChanged() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 250), _apply);
   }
 
   void _apply() {
-    final s = _q.text.trim().toLowerCase();
+    final raw = _q.text;
+    final q = _norm(raw);
+    final qDigits = _digits(raw);
+    final qAlnum = _alnum(raw);
+
     setState(() {
-      if (s.isEmpty) {
+      if (q.isEmpty) {
         _filtered = List.from(_all);
       } else {
-        final onlyDigits = s.replaceAll(RegExp(r'\D'), '');
         _filtered = _all.where((c) {
-          final nome = c.nome.toLowerCase();
-          final tel = c.telefone.replaceAll(RegExp(r'\D'), '');
-          final placa = (c.placa ?? '').toLowerCase();
-          return nome.contains(s) || tel.contains(onlyDigits) || placa.contains(s);
+          final nome = _norm(c.nome);
+          final telDigits = _digits(c.telefone);
+          final placaAlnum = _alnum(c.placa ?? '');
+
+          final matchNome = nome.contains(q);
+          final matchTel = qDigits.isNotEmpty && telDigits.contains(qDigits);
+          final matchPlaca = qAlnum.isNotEmpty && placaAlnum.contains(qAlnum);
+
+          return matchNome || matchTel || matchPlaca;
         }).toList();
       }
-      // quando filtra, começa mostrando os primeiros 10 do resultado
       _visible = 10;
     });
   }
@@ -303,6 +328,7 @@ class _ClientsPageState extends State<ClientsPage> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: TextField(
               controller: _q,
+              onChanged: (_) => _onQueryChanged(), // debounce como em Orçamentos
               style: const TextStyle(color: Colors.black87),
               decoration: const InputDecoration(
                 filled: true,
@@ -367,40 +393,35 @@ class _ClientsPageState extends State<ClientsPage> {
                               '${c.telefone}${(c.placa != null && c.placa!.isNotEmpty) ? " • ${c.placa}" : ""}',
                               style: const TextStyle(color: Colors.black54),
                             ),
-                            // lib/pages/clients_page.dart
-// (arquivo igual ao seu último, com este pequeno acréscimo no trailing da ListTile)
-
-trailing: Wrap(
-  spacing: 0,
-  children: [
-    IconButton(
-      tooltip: 'Orçamentos deste cliente',
-      onPressed: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => budgets.BudgetsPage(filterCliente: c),
-          ),
-        );
-      },
-      icon: const Icon(Icons.receipt_long_outlined, color: Colors.black54),
-    ),
-    IconButton(
-      tooltip: 'Editar',
-      onPressed: () => _editCliente(c),
-      icon: const Icon(Icons.edit_outlined, color: Colors.black54),
-    ),
-    IconButton(
-      tooltip: 'Excluir',
-      onPressed: () async {
-        await store.removeCliente(c);
-        await _load();
-      },
-      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-    ),
-  ],
-),
-
-
+                            trailing: Wrap(
+                              spacing: 0,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Orçamentos deste cliente',
+                                  onPressed: () {
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute(
+                                        builder: (_) => budgets.BudgetsPage(filterCliente: c),
+                                      ),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.receipt_long_outlined, color: Colors.black54),
+                                ),
+                                IconButton(
+                                  tooltip: 'Editar',
+                                  onPressed: () => _editCliente(c),
+                                  icon: const Icon(Icons.edit_outlined, color: Colors.black54),
+                                ),
+                                IconButton(
+                                  tooltip: 'Excluir',
+                                  onPressed: () async {
+                                    await store.removeCliente(c);
+                                    await _load();
+                                  },
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                                ),
+                              ],
+                            ),
                             // tocar no cliente abre a página de orçamentos do cliente
                             onTap: () {
                               Navigator.of(context).push(
