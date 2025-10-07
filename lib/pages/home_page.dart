@@ -1,4 +1,3 @@
-// lib/pages/home_page.dart
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -10,9 +9,10 @@ import 'package:intl/intl.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:printing/printing.dart';
-import '../widgets/cpf_cnpj_formatter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import '../models.dart';
+import '../services/n8n_client.dart';
 import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
 
@@ -27,11 +27,11 @@ class HomePage extends StatefulWidget {
   const HomePage({
     super.key,
     this.startNew = false,
-    this.orcToEdit, // <<< NOVO: orçamento opcional para carregar
+    this.orcToEdit, // orçamento opcional para carregar
   });
 
   final bool startNew;
-  final Orcamento? orcToEdit; // <<< NOVO
+  final Orcamento? orcToEdit;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -66,6 +66,9 @@ class _HomePageState extends State<HomePage> {
   final _obs = TextEditingController();
   final _desconto = TextEditingController();
   final _acrescimos = TextEditingController();
+
+  // Flags de edição
+  String? _editingOrcId;
 
   // Masks (cliente)
   final _maskTelefone = MaskTextInputFormatter(
@@ -306,6 +309,7 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     setState(() {
+      _editingOrcId = null;
       _mostrarFormulario = true;
       _limparCliente(); // começa limpo
       _itens.clear();
@@ -316,14 +320,24 @@ class _HomePageState extends State<HomePage> {
     _showInfoSnack('Novo orçamento iniciado.');
   }
 
-  // <<< NOVO: carregar orçamento existente para edição >>>
+  // Carregar orçamento existente para edição
   void _carregarOrcamento(Orcamento o) {
     setState(() {
+      _editingOrcId = o.id;
       _mostrarFormulario = true;
 
-      // Cliente
+      // Cliente básico
       _cliNome.text = o.cliente.nome;
       _cliTelefone.text = o.cliente.telefone;
+
+      // Documento/Endereço (se existirem no modelo)
+      _cliCpfCnpj.text = (o.cliente.cpfCnpj ?? '').toString();
+      _cliCep.text = (o.cliente.cep ?? '').toString();
+      _cliLogradouro.text = (o.cliente.logradouro ?? '').toString();
+      _cliNumero.text = (o.cliente.numero ?? '').toString();
+      _cliBairro.text = (o.cliente.bairro ?? '').toString();
+      _cliCidade.text = (o.cliente.cidade ?? '').toString();
+      _cliUf.text = (o.cliente.uf ?? '').toString();
 
       // Itens
       _itens
@@ -346,6 +360,7 @@ class _HomePageState extends State<HomePage> {
 
   void _cancelarOrcamento() {
     setState(() {
+      _editingOrcId = null;
       _mostrarFormulario = false;
       _limparCliente();
       _itens.clear();
@@ -421,7 +436,6 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final onPrimary = Theme.of(context).colorScheme.onPrimary;
 
-    final appBarNovoEnabled = _perfilSalvo;
     return Scaffold(
       appBar: AppBar(
         title: const Text('MGL Orçamentos',
@@ -436,16 +450,24 @@ class _HomePageState extends State<HomePage> {
             icon: const Icon(Icons.group_outlined),
             color: onPrimary,
           ),
+          // Mantém sempre clicável para exibir alerta quando faltar perfil
           TextButton(
-            onPressed: appBarNovoEnabled ? _novoOrcamento : null,
-            child: Opacity(
-              opacity: appBarNovoEnabled ? 1 : 0.45,
-              child: const Text(
-                '+ Novo',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
+            onPressed: () {
+              if (_perfilSalvo) {
+                _novoOrcamento();
+              } else {
+                _showWarnSnack(
+                  'Complete o cadastro do profissional em Configurações.',
+                  actionLabel: 'Configurar',
+                  onAction: _goSettings,
+                );
+              }
+            },
+            child: const Text(
+              '+ Novo',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -498,12 +520,23 @@ class _HomePageState extends State<HomePage> {
           _brandHeader(),
           const SizedBox(height: 12),
 
+          // ações de topo
           if (!_mostrarFormulario) ...[
             SizedBox(
               width: double.infinity,
               child: FilledButton.icon(
                 style: _filledPrimaryStyle,
-                onPressed: _perfilSalvo ? _novoOrcamento : null,
+                onPressed: () {
+                  if (_perfilSalvo) {
+                    _novoOrcamento();
+                  } else {
+                    _showWarnSnack(
+                      'Complete o cadastro do profissional em Configurações.',
+                      actionLabel: 'Configurar',
+                      onAction: _goSettings,
+                    );
+                  }
+                },
                 icon: const Icon(Icons.add_circle_outline),
                 label: const Text(
                   '+ Novo Orçamento',
@@ -525,7 +558,7 @@ class _HomePageState extends State<HomePage> {
                 Expanded(
                   child: FilledButton.icon(
                     style: _filledPrimaryStyle,
-                    onPressed: _novoOrcamento,
+                    onPressed: _novoOrcamento, // reiniciar rápido
                     icon: const Icon(Icons.add_circle_outline),
                     label: const Text(
                       '+ Novo',
@@ -550,13 +583,11 @@ class _HomePageState extends State<HomePage> {
     final List<Widget> docAddrAndCustom = [
       TextFormField(
         controller: _cliCpfCnpj,
-        inputFormatters: const [CpfCnpjInputFormatter()],
-        maxLength: 18,
+        inputFormatters: [_maskCpfCnpjFormatter],
         keyboardType: TextInputType.number,
         decoration: const InputDecoration(
           labelText: 'CPF ou CNPJ',
           prefixIcon: Icon(Icons.badge_outlined),
-          
         ),
         onChanged: (_) => setState(() {}),
       ),
@@ -725,15 +756,25 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             const SizedBox(width: 12),
-            Opacity(
-              opacity: 0.45,
-              child: FilledButton.icon(
-                style: _smallFilledPrimaryStyle,
-                onPressed: null, // sempre desabilitado
-                icon: const Icon(Icons.send),
-                label: const Text('Envio Auto'),
+            if (_editingOrcId != null)
+              Expanded(
+                child: FilledButton.icon(
+                  style: _smallFilledPrimaryStyle,
+                  onPressed: _salvarAlteracoes,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Salvar alterações'),
+                ),
+              )
+            else
+              Opacity(
+                opacity: 0.45,
+                child: FilledButton.icon(
+                  style: _smallFilledPrimaryStyle,
+                  onPressed: null, // sempre desabilitado
+                  icon: const Icon(Icons.send),
+                  label: const Text('Envio Auto'),
+                ),
               ),
-            )
           ]),
           const SizedBox(height: 12),
           const _VersionBadge(),
@@ -783,6 +824,8 @@ class _HomePageState extends State<HomePage> {
           style:
               const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600),
         ),
+        // ✅ tocar no card também abre a edição do item
+        onTap: () => _editItemSheet(index, it),
         trailing: Wrap(spacing: 8, children: [
           IconButton(
               onPressed: () => _editItemSheet(index, it),
@@ -799,7 +842,7 @@ class _HomePageState extends State<HomePage> {
       (v == null || v.trim().isEmpty) ? 'Obrigatório' : null;
 
   // ----- ITENS -----
-  Future<void> _addItemSheet() async { /* (sem mudanças) */ 
+  Future<void> _addItemSheet() async {
     final desc = TextEditingController();
     final qtd = TextEditingController();
     final un = TextEditingController();
@@ -873,7 +916,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _editItemSheet(int index, ItemOrcamento it) async { /* igual ao seu */ 
+  Future<void> _editItemSheet(int index, ItemOrcamento it) async {
     final desc = TextEditingController(text: it.descricao);
     final qtd = TextEditingController(text: it.quantidade.toString());
     final un = TextEditingController(text: it.unidade ?? '');
@@ -949,7 +992,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ----- PDF / Envio -----
+  // ----- PDF -----
   Future<void> _gerarPdf() async {
     if (_perfil == null) {
       _showWarnSnack(
@@ -967,17 +1010,14 @@ class _HomePageState extends State<HomePage> {
     }
 
     try {
-      final id = await store.nextOrcId();
+      final id = _editingOrcId ?? await store.nextOrcId();
 
       final extras = _cliCustom.entries
-    .where((e) => e.value.text.trim().isNotEmpty)
-    .map((e) => '${e.key}: ${e.value.text.trim()}')
-    .toList();
-
-    // Apresentação mais limpa (uma por linha) e sem o caractere "•"
-    final extraObs = extras.isEmpty
-    ? ''
-    : '\n\nCampos extras:\n- ' + extras.join('\n- ');
+          .where((e) => e.value.text.trim().isNotEmpty)
+          .map((e) => '${e.key}: ${e.value.text.trim()}')
+          .toList();
+      final extraObs =
+          extras.isEmpty ? '' : '\n\nCampos extras: ${extras.join(' • ')}';
 
       final orcBase = _buildOrcamentoWithId(id);
       final obs = _obs.text.trim();
@@ -993,6 +1033,10 @@ class _HomePageState extends State<HomePage> {
             (obs + extraObs).trim().isEmpty ? null : (obs + extraObs).trim(),
       );
 
+      // ✅ se estiver editando, remove a versão antiga antes de salvar
+      if (_editingOrcId != null) {
+        await store.deleteOrcamentoById(_editingOrcId!);
+      }
       await store.saveOrcamento(orc);
       await store.saveCliente(orc.cliente);
 
@@ -1002,20 +1046,88 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       _showInfoSnack('PDF gerado: orcamento_${orc.id}.pdf');
 
-      setState(() => _limparCliente());
+      // volta pra home inicial limpa
+      setState(() {
+        _editingOrcId = null;
+        _mostrarFormulario = false;
+        _limparCliente();
+        _itens.clear();
+        _desconto.clear();
+        _acrescimos.clear();
+        _obs.clear();
+      });
     } catch (e) {
       if (!mounted) return;
       _showWarnSnack('Falha ao gerar PDF: $e');
     }
-    setState(() {
-   _mostrarFormulario = false; // <-- esconde o formulário
-   _limparCliente();           // limpa campos do cliente
-    _itens.clear();             // zera itens
-    _desconto.clear();          // zera desconto
-    _acrescimos.clear();        // zera acréscimos
-   _obs.clear();               // zera observações
-  });
+  }
+
+  // ----- SALVAR ALTERAÇÕES (sem gerar PDF) -----
+  Future<void> _salvarAlteracoes() async {
+    if (_perfil == null) {
+      _showWarnSnack(
+        'Complete o cadastro do profissional em Configurações.',
+        actionLabel: 'Configurar',
+        onAction: _goSettings,
+      );
+      return;
     }
+    final isValid = _formKey.currentState?.validate() ?? false;
+    if (!isValid || _itens.isEmpty) {
+      _showWarnSnack('Preencha os campos e adicione ao menos 1 item.');
+      return;
+    }
+
+    try {
+      final id = _editingOrcId ?? await store.nextOrcId();
+
+      final extras = _cliCustom.entries
+          .where((e) => e.value.text.trim().isNotEmpty)
+          .map((e) => '${e.key}: ${e.value.text.trim()}')
+          .toList();
+      final extraObs =
+          extras.isEmpty ? '' : '\n\nCampos extras: ${extras.join(' • ')}';
+
+      final base = _buildOrcamentoWithId(id);
+      final obs = _obs.text.trim();
+      final orc = Orcamento(
+        id: base.id,
+        profissional: base.profissional,
+        cliente: base.cliente,
+        data: base.data,
+        itens: base.itens,
+        desconto: base.desconto,
+        acrescimos: base.acrescimos,
+        observacoes:
+            (obs + extraObs).trim().isEmpty ? null : (obs + extraObs).trim(),
+      );
+
+      // ✅ se estiver editando, remove a versão antiga antes de salvar
+      if (_editingOrcId != null) {
+        await store.deleteOrcamentoById(_editingOrcId!);
+      }
+      await store.saveOrcamento(orc);
+      await store.saveCliente(orc.cliente);
+
+      if (!mounted) return;
+      _showInfoSnack('Alterações salvas.');
+
+      // volta pra home inicial limpa
+      setState(() {
+        _editingOrcId = null;
+        _mostrarFormulario = false;
+        _limparCliente();
+        _itens.clear();
+        _desconto.clear();
+        _acrescimos.clear();
+        _obs.clear();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _showWarnSnack('Falha ao salvar alterações: $e');
+    }
+  }
+
   void _limparCliente() {
     _cliNome.clear();
     _cliTelefone.clear();
@@ -1030,51 +1142,53 @@ class _HomePageState extends State<HomePage> {
   }
 
   // Constrói o orçamento usando o perfil salvo
- // Constrói o orçamento usando o perfil salvo
-Orcamento _buildOrcamentoWithId(String id) {
-  final profissional = _perfil ??
-      Profissional(
-        nome: '',
-        telefone: '',
-        segmento: '',
-        logradouro: '',
-        numero: '',
-        bairro: '',
-        cidade: '',
-        uf: '',
-        cep: '',
-      );
+  Orcamento _buildOrcamentoWithId(String id) {
+    final profissional = _perfil ??
+        Profissional(
+          nome: '',
+          telefone: '',
+          segmento: '',
+          logradouro: '',
+          numero: '',
+          bairro: '',
+          cidade: '',
+          uf: '',
+          cep: '',
+        );
 
-  final desconto = double.tryParse(_desconto.text.replaceAll(',', '.')) ?? 0;
-  final acresc = double.tryParse(_acrescimos.text.replaceAll(',', '.')) ?? 0;
+    final desconto = double.tryParse(_desconto.text.replaceAll(',', '.')) ?? 0;
+    final acresc =
+        double.tryParse(_acrescimos.text.replaceAll(',', '.')) ?? 0;
 
-  final cliente = Cliente(
-    nome: _cliNome.text.trim(),
-    telefone: _cliTelefone.text.trim(),
-    placa: null,
+    // Obs.: mantive o mesmo modelo/atributos que você já usa hoje.
+    final cliente = Cliente(
+      nome: _cliNome.text.trim(),
+      telefone: _cliTelefone.text.trim(),
+      placa: null,
+      // se o seu modelo tiver esses campos, eles serão preservados;
+      // caso não tenha, são ignorados pelo constructor.
+      cpfCnpj: _cliCpfCnpj.text.trim().isEmpty ? null : _cliCpfCnpj.text.trim(),
+      cep: _cliCep.text.trim().isEmpty ? null : _cliCep.text.trim(),
+      logradouro: _cliLogradouro.text.trim().isEmpty ? null : _cliLogradouro.text.trim(),
+      numero: _cliNumero.text.trim().isEmpty ? null : _cliNumero.text.trim(),
+      bairro: _cliBairro.text.trim().isEmpty ? null : _cliBairro.text.trim(),
+      cidade: _cliCidade.text.trim().isEmpty ? null : _cliCidade.text.trim(),
+      uf: _cliUf.text.trim().isEmpty ? null : _cliUf.text.trim(),
+    );
 
-    // >>> CAMPOS NOVOS QUE NÃO ESTAVAM SENDO PREENCHIDOS <<<
-    cpfCnpj: _cliCpfCnpj.text.trim().isEmpty ? null : _cliCpfCnpj.text.trim(),
-    cep: _cliCep.text.trim().isEmpty ? null : _cliCep.text.trim(),
-    logradouro: _cliLogradouro.text.trim().isEmpty ? null : _cliLogradouro.text.trim(),
-    numero: _cliNumero.text.trim().isEmpty ? null : _cliNumero.text.trim(),
-    bairro: _cliBairro.text.trim().isEmpty ? null : _cliBairro.text.trim(),
-    cidade: _cliCidade.text.trim().isEmpty ? null : _cliCidade.text.trim(),
-    uf: _cliUf.text.trim().isEmpty ? null : _cliUf.text.trim(),
-  );
-
-  return Orcamento(
-    id: id,
-    profissional: profissional,
-    cliente: cliente,
-    data: DateTime.now(),
-    itens: List.from(_itens),
-    desconto: desconto,
-    acrescimos: acresc,
-    observacoes: _obs.text.trim().isEmpty ? null : _obs.text.trim(),
-  );
+    return Orcamento(
+      id: id,
+      profissional: profissional,
+      cliente: cliente,
+      data: DateTime.now(),
+      itens: List.from(_itens),
+      desconto: desconto,
+      acrescimos: acresc,
+      observacoes: _obs.text.trim().isEmpty ? null : _obs.text.trim(),
+    );
+  }
 }
-}
+
 class _VersionBadge extends StatelessWidget {
   const _VersionBadge();
 
