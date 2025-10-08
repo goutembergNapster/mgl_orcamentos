@@ -120,6 +120,9 @@ Future<Uint8List> gerarPdfBytes(
           if (s(orc.profissional.telefone).isNotEmpty)
             pw.Text('Tel: ${s(orc.profissional.telefone)}',
                 style: const pw.TextStyle(fontSize: 10)),
+          if (s(orc.profissional.cpfCnpj).isNotEmpty)
+            pw.Text('CPF/CNPJ: ${s(orc.profissional.cpfCnpj)}',
+                style: const pw.TextStyle(fontSize: 10)),
           if (s(orc.profissional.logradouro).isNotEmpty ||
               s(orc.profissional.numero).isNotEmpty)
             pw.Text(

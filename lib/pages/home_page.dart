@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -79,18 +80,9 @@ class _HomePageState extends State<HomePage> {
     mask: '#####-###',
     filter: {'#': RegExp(r'[0-9]')},
   );
-  final _maskCpf = MaskTextInputFormatter(
-    mask: '###.###.###-##',
-    filter: {'#': RegExp(r'[0-9]')},
-  );
-  final _maskCnpj = MaskTextInputFormatter(
-    mask: '##.###.###/####-##',
-    filter: {'#': RegExp(r'[0-9]')},
-  );
-  MaskTextInputFormatter get _maskCpfCnpjFormatter {
-    final digits = _cliCpfCnpj.text.replaceAll(RegExp(r'[^0-9]'), '');
-    return digits.length > 11 ? _maskCnpj : _maskCpf;
-  }
+
+  /// Formatter dinâmico CPF/CNPJ (permite crescer para CNPJ sem travar)
+  final TextInputFormatter _cpfCnpjFormatter = _CpfCnpjDynamicFormatter();
 
   Uint8List? _logoBytes;
   final dynamic store = StorageService();
@@ -332,6 +324,8 @@ class _HomePageState extends State<HomePage> {
 
       // Documento/Endereço (se existirem no modelo)
       _cliCpfCnpj.text = (o.cliente.cpfCnpj ?? '').toString();
+      _cliCpfCnpj.selection = TextSelection.collapsed(offset: _cliCpfCnpj.text.length);
+
       _cliCep.text = (o.cliente.cep ?? '').toString();
       _cliLogradouro.text = (o.cliente.logradouro ?? '').toString();
       _cliNumero.text = (o.cliente.numero ?? '').toString();
@@ -583,13 +577,21 @@ class _HomePageState extends State<HomePage> {
     final List<Widget> docAddrAndCustom = [
       TextFormField(
         controller: _cliCpfCnpj,
-        inputFormatters: [_maskCpfCnpjFormatter],
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          _cpfCnpjFormatter,
+        ],
         keyboardType: TextInputType.number,
         decoration: const InputDecoration(
           labelText: 'CPF ou CNPJ',
           prefixIcon: Icon(Icons.badge_outlined),
         ),
-        onChanged: (_) => setState(() {}),
+        validator: _cpfCnpjValidator,
+        onChanged: (_) {
+          // revalida em tempo real
+          _formKey.currentState?.validate();
+          setState(() {});
+        },
       ),
       Focus(
         focusNode: _cliCepFocus,
@@ -824,7 +826,7 @@ class _HomePageState extends State<HomePage> {
           style:
               const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600),
         ),
-        // ✅ tocar no card também abre a edição do item
+        // tocar no card também abre a edição do item
         onTap: () => _editItemSheet(index, it),
         trailing: Wrap(spacing: 8, children: [
           IconButton(
@@ -840,6 +842,65 @@ class _HomePageState extends State<HomePage> {
 
   String? _req(String? v) =>
       (v == null || v.trim().isEmpty) ? 'Obrigatório' : null;
+
+  // ================= CPF/CNPJ utils (cliente) =================
+  String? _cpfCnpjValidator(String? v) {
+    final raw = (v ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (raw.isEmpty) return null; // opcional
+    if (raw.length == 11) {
+      return _isValidCpf(raw) ? null : 'CPF inválido';
+    } else if (raw.length == 14) {
+      return _isValidCnpj(raw) ? null : 'CNPJ inválido';
+    } else {
+      return 'Informe 11 (CPF) ou 14 dígitos (CNPJ)';
+    }
+  }
+
+  bool _isValidCpf(String cpf) {
+    if (cpf.length != 11) return false;
+    if (RegExp(r'^(\d)\1{10}$').hasMatch(cpf)) return false;
+    int soma = 0;
+    for (int i = 0; i < 9; i++) {
+      soma += int.parse(cpf[i]) * (10 - i);
+    }
+    int d1 = (soma * 10) % 11;
+    if (d1 == 10) d1 = 0;
+    if (d1 != int.parse(cpf[9])) return false;
+
+    soma = 0;
+    for (int i = 0; i < 10; i++) {
+      soma += int.parse(cpf[i]) * (11 - i);
+    }
+    int d2 = (soma * 10) % 11;
+    if (d2 == 10) d2 = 0;
+    return d2 == int.parse(cpf[10]);
+  }
+
+  bool _isValidCnpj(String cnpj) {
+    if (cnpj.length != 14) return false;
+    if (RegExp(r'^(\d)\1{13}$').hasMatch(cnpj)) return false;
+
+    final nums = cnpj.split('').map(int.parse).toList();
+    const p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const p2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+    int soma = 0;
+    for (int i = 0; i < p1.length; i++) {
+      soma += nums[i] * p1[i];
+    }
+    int resto = soma % 11;
+    int d1 = resto < 2 ? 0 : 11 - resto;
+    if (d1 != nums[12]) return false;
+
+    soma = 0;
+    for (int i = 0; i < p2.length; i++) {
+      soma += nums[i] * p2[i];
+    }
+    resto = soma % 11;
+    int d2 = resto < 2 ? 0 : 11 - resto;
+
+    return d2 == nums[13];
+  }
 
   // ----- ITENS -----
   Future<void> _addItemSheet() async {
@@ -1033,9 +1094,8 @@ class _HomePageState extends State<HomePage> {
             (obs + extraObs).trim().isEmpty ? null : (obs + extraObs).trim(),
       );
 
-      // ✅ se estiver editando, remove a versão antiga antes de salvar
       if (_editingOrcId != null) {
-        await store.deleteOrcamentoById(_editingOrcId!);
+        await store.deleteOrcamentoById(_editingOrcId!); // evita duplicar
       }
       await store.saveOrcamento(orc);
       await store.saveCliente(orc.cliente);
@@ -1102,9 +1162,8 @@ class _HomePageState extends State<HomePage> {
             (obs + extraObs).trim().isEmpty ? null : (obs + extraObs).trim(),
       );
 
-      // ✅ se estiver editando, remove a versão antiga antes de salvar
       if (_editingOrcId != null) {
-        await store.deleteOrcamentoById(_editingOrcId!);
+        await store.deleteOrcamentoById(_editingOrcId!); // evita duplicar
       }
       await store.saveOrcamento(orc);
       await store.saveCliente(orc.cliente);
@@ -1160,13 +1219,10 @@ class _HomePageState extends State<HomePage> {
     final acresc =
         double.tryParse(_acrescimos.text.replaceAll(',', '.')) ?? 0;
 
-    // Obs.: mantive o mesmo modelo/atributos que você já usa hoje.
     final cliente = Cliente(
       nome: _cliNome.text.trim(),
       telefone: _cliTelefone.text.trim(),
       placa: null,
-      // se o seu modelo tiver esses campos, eles serão preservados;
-      // caso não tenha, são ignorados pelo constructor.
       cpfCnpj: _cliCpfCnpj.text.trim().isEmpty ? null : _cliCpfCnpj.text.trim(),
       cep: _cliCep.text.trim().isEmpty ? null : _cliCep.text.trim(),
       logradouro: _cliLogradouro.text.trim().isEmpty ? null : _cliLogradouro.text.trim(),
@@ -1185,6 +1241,40 @@ class _HomePageState extends State<HomePage> {
       desconto: desconto,
       acrescimos: acresc,
       observacoes: _obs.text.trim().isEmpty ? null : _obs.text.trim(),
+    );
+  }
+}
+
+class _CpfCnpjDynamicFormatter extends TextInputFormatter {
+  // Formata dinamicamente: até 11 dígitos => CPF; 12–14 => CNPJ
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    String masked = digits;
+    if (digits.length <= 11) {
+      // CPF: 000.000.000-00
+      final b = StringBuffer();
+      for (int i = 0; i < digits.length && i < 11; i++) {
+        if (i == 3 || i == 6) b.write('.');
+        if (i == 9) b.write('-');
+        b.write(digits[i]);
+      }
+      masked = b.toString();
+    } else {
+      // CNPJ: 00.000.000/0000-00
+      final b = StringBuffer();
+      for (int i = 0; i < digits.length && i < 14; i++) {
+        if (i == 2 || i == 5) b.write('.');
+        if (i == 8) b.write('/');
+        if (i == 12) b.write('-');
+        b.write(digits[i]);
+      }
+      masked = b.toString();
+    }
+    return TextEditingValue(
+      text: masked,
+      selection: TextSelection.collapsed(offset: masked.length),
     );
   }
 }

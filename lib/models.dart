@@ -35,6 +35,7 @@ class Profissional {
         'cidade': cidade,
         'uf': uf,
         'cep': cep,
+        if (cpfCnpj != null) 'cpfCnpj': cpfCnpj, // ✅ inclui no JSON
       };
 
   factory Profissional.fromJson(Map<String, dynamic> j) => Profissional(
@@ -47,6 +48,7 @@ class Profissional {
         cidade: j['cidade'] ?? '',
         uf: j['uf'] ?? '',
         cep: j['cep'] ?? '',
+        cpfCnpj: j['cpfCnpj'], // ✅ lê do JSON
       );
 }
 
