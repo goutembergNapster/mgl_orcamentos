@@ -20,11 +20,11 @@ apply plugin: 'kotlin-android'
 apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
 
 android {
-  namespace "com.gp-app.orcamento_app"
+  namespace "com.mgl.orcamento_app"
   compileSdkVersion 34
 
   defaultConfig {
-    applicationId "com.gp-app.orcamento_app"
+    applicationId "com.mgl.orcamento_app"
     minSdkVersion 21
     targetSdkVersion 34
     versionCode flutterVersionCode.toInteger()
