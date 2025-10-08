@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 import '../models.dart';
@@ -36,6 +37,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _profNome = TextEditingController();
   final _profTelefone = TextEditingController();
   final _profSegmento = TextEditingController();
+  final _profCpfCnpj = TextEditingController();
   final _cep = TextEditingController();
   final _logradouro = TextEditingController();
   final _numero = TextEditingController();
@@ -45,19 +47,18 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _editingProfile = true;
   Profissional? _perfilAtual;
 
-  // CEP (profissional) – igual à Home, mas com “latch” de erro
+  // CEP (profissional)
   final _cepFocus = FocusNode();
   Timer? _cepDebounce;
   bool _buscandoProfCep = false;
 
-  // 🔒 quando der erro uma vez, não tenta de novo sozinho até o usuário
-  // editar o campo CEP novamente.
-  bool _cepLookupLatched = false;
-  bool _cepUserEdited = false;
-
   // --- CAMPOS PERSONALIZADOS ---
   final _newFieldCtrl = TextEditingController();
   List<String> _customFields = [];
+
+  // Formatters
+  final TextInputFormatter _telefoneMask = _TelefoneMask();
+  final TextInputFormatter _cpfCnpjFormatter = _CpfCnpjDynamicFormatter();
 
   ButtonStyle get _filledPrimaryStyle => FilledButton.styleFrom(
         backgroundColor: AppColors.navy900,
@@ -88,6 +89,7 @@ class _SettingsPageState extends State<SettingsPage> {
       _profNome,
       _profTelefone,
       _profSegmento,
+      _profCpfCnpj,
       _cep,
       _logradouro,
       _numero,
@@ -119,6 +121,14 @@ class _SettingsPageState extends State<SettingsPage> {
         _profNome.text = p.nome;
         _profTelefone.text = p.telefone;
         _profSegmento.text = p.segmento;
+        // doc
+        try {
+          final any = p as dynamic;
+          final doc = (any.cpfCnpj ?? '').toString();
+          _profCpfCnpj.text = doc;
+          _profCpfCnpj.selection =
+              TextSelection.collapsed(offset: _profCpfCnpj.text.length);
+        } catch (_) {}
         _logradouro.text = p.logradouro;
         _numero.text = p.numero;
         _bairro.text = p.bairro;
@@ -244,28 +254,100 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _req(String? v) =>
       (v == null || v.trim().isEmpty) ? 'Obrigatório' : null;
 
+  String? _cpfCnpjValidator(String? v) {
+    final raw = (v ?? '').replaceAll(RegExp(r'[^0-9]'), '');
+    if (raw.isEmpty) return null; // opcional
+    if (raw.length == 11) {
+      return _isValidCpf(raw) ? null : 'CPF inválido';
+    } else if (raw.length == 14) {
+      return _isValidCnpj(raw) ? null : 'CNPJ inválido';
+    } else {
+      return 'Informe 11 (CPF) ou 14 dígitos (CNPJ)';
+    }
+  }
+
+  bool _isValidCpf(String cpf) {
+    if (cpf.length != 11) return false;
+    if (RegExp(r'^(\d)\1{10}$').hasMatch(cpf)) return false;
+    int soma = 0;
+    for (int i = 0; i < 9; i++) {
+      soma += int.parse(cpf[i]) * (10 - i);
+    }
+    int d1 = (soma * 10) % 11;
+    if (d1 == 10) d1 = 0;
+    if (d1 != int.parse(cpf[9])) return false;
+
+    soma = 0;
+    for (int i = 0; i < 10; i++) {
+      soma += int.parse(cpf[i]) * (11 - i);
+    }
+    int d2 = (soma * 10) % 11;
+    if (d2 == 10) d2 = 0;
+    return d2 == int.parse(cpf[10]);
+  }
+
+  bool _isValidCnpj(String cnpj) {
+    if (cnpj.length != 14) return false;
+    if (RegExp(r'^(\d)\1{13}$').hasMatch(cnpj)) return false;
+
+    final nums = cnpj.split('').map(int.parse).toList();
+    const p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const p2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+    int soma = 0;
+    for (int i = 0; i < p1.length; i++) {
+      soma += nums[i] * p1[i];
+    }
+    int resto = soma % 11;
+    int d1 = resto < 2 ? 0 : 11 - resto;
+    if (d1 != nums[12]) return false;
+
+    soma = 0;
+    for (int i = 0; i < p2.length; i++) {
+      soma += nums[i] * p2[i];
+    }
+    resto = soma % 11;
+    int d2 = resto < 2 ? 0 : 11 - resto;
+
+    return d2 == nums[13];
+  }
+
   Future<void> _saveProfile() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
-    final p = Profissional(
-      nome: _profNome.text.trim(),
-      telefone: _profTelefone.text.trim(),
-      segmento: _profSegmento.text.trim(),
-      logradouro: _logradouro.text.trim(),
-      numero: _numero.text.trim(),
-      bairro: _bairro.text.trim(),
-      cidade: _cidade.text.trim(),
-      uf: _uf.text.trim(),
-      cep: _cep.text.trim(),
-    );
+
+    Profissional p;
+    try {
+      p = Profissional(
+        nome: _profNome.text.trim(),
+        telefone: _profTelefone.text.trim(),
+        segmento: _profSegmento.text.trim(),
+        logradouro: _logradouro.text.trim(),
+        numero: _numero.text.trim(),
+        bairro: _bairro.text.trim(),
+        cidade: _cidade.text.trim(),
+        uf: _uf.text.trim(),
+        cep: _cep.text.trim(),
+        // ignore: undefined_named_parameter
+        cpfCnpj: _profCpfCnpj.text.trim(),
+      );
+    } catch (_) {
+      p = Profissional(
+        nome: _profNome.text.trim(),
+        telefone: _profTelefone.text.trim(),
+        segmento: _profSegmento.text.trim(),
+        logradouro: _logradouro.text.trim(),
+        numero: _numero.text.trim(),
+        bairro: _bairro.text.trim(),
+        cidade: _cidade.text.trim(),
+        uf: _uf.text.trim(),
+        cep: _cep.text.trim(),
+      );
+    }
+
     await store.savePerfilProfissional(p);
     await store.setWebhookUrl(_webhook.text.trim());
     _perfilAtual = p;
-    setState(() {
-      _editingProfile = false;
-      // Ao salvar, “destrava” o latch de CEP (se usuário quiser buscar de novo)
-      _cepLookupLatched = false;
-      _cepUserEdited = false;
-    });
+    setState(() => _editingProfile = false);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Dados do profissional salvos!')));
@@ -298,17 +380,14 @@ class _SettingsPageState extends State<SettingsPage> {
       _profNome.clear();
       _profTelefone.clear();
       _profSegmento.clear();
+      _profCpfCnpj.clear();
       _logradouro.clear();
       _numero.clear();
       _bairro.clear();
       _cidade.clear();
       _uf.clear();
       _cep.clear();
-      setState(() {
-        _editingProfile = true;
-        _cepLookupLatched = false;
-        _cepUserEdited = false;
-      });
+      setState(() => _editingProfile = true);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context)
@@ -320,17 +399,13 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  // ===== CEP (profissional) — com debounce e “latch” de erro =====
+  // ===== CEP (profissional) =====
   void _debouncedCepListener() {
-    // Só tenta se o usuário editou e não está “travado” por erro
-    if (!_cepUserEdited || _cepLookupLatched) return;
-
     _cepDebounce?.cancel();
     _cepDebounce = Timer(const Duration(milliseconds: 350), _fetchProfCepIfReady);
   }
 
   Future<void> _fetchProfCepIfReady() async {
-    if (_cepLookupLatched) return; // travado após erro
     final digits = _cep.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (_buscandoProfCep || digits.length != 8) return;
     setState(() => _buscandoProfCep = true);
@@ -340,31 +415,27 @@ class _SettingsPageState extends State<SettingsPage> {
           .timeout(const Duration(seconds: 8));
       if (!mounted) return;
       if (r.statusCode != 200) {
-        _latchCepError();
+        _showCepError();
         return;
       }
       final j = jsonDecode(r.body);
       if (j is Map && j['erro'] == true) {
-        _latchCepError();
+        _showCepError();
         return;
       }
-      // Preenche campos
       _logradouro.text = (j['logradouro'] ?? '').toString();
       _bairro.text = (j['bairro'] ?? '').toString();
       _cidade.text = (j['localidade'] ?? '').toString();
       _uf.text = (j['uf'] ?? '').toString().toUpperCase();
     } catch (_) {
       if (!mounted) return;
-      _latchCepError();
+      _showCepError();
     } finally {
       if (mounted) setState(() => _buscandoProfCep = false);
     }
   }
 
-  void _latchCepError() {
-    // Mostra o alerta uma única vez e trava novas buscas até o usuário editar o CEP
-    _cepLookupLatched = true;
-    _cepUserEdited = false; // precisa editar novamente para destravar
+  void _showCepError() {
     showDialog<void>(
       context: context,
       builder: (_) => AlertDialog(
@@ -621,6 +692,11 @@ class _SettingsPageState extends State<SettingsPage> {
   // ====== VIEW ======
   Widget _profileView() {
     final p = _perfilAtual!;
+    String doc = '';
+    try {
+      final any = p as dynamic;
+      doc = (any.cpfCnpj ?? '').toString();
+    } catch (_) {}
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -629,6 +705,7 @@ class _SettingsPageState extends State<SettingsPage> {
         const SizedBox(height: 8),
         _kv('Nome', p.nome),
         _kv('Telefone', p.telefone),
+        if (doc.trim().isNotEmpty) _kv('CPF/CNPJ', doc),
         if (p.segmento.trim().isNotEmpty) _kv('Segmento', p.segmento),
         const SizedBox(height: 6),
         _kv(
@@ -642,16 +719,12 @@ class _SettingsPageState extends State<SettingsPage> {
               if (p.cep.isNotEmpty) p.cep,
             ].where((s) => s.trim().isNotEmpty).join(' • ')),
         const SizedBox(height: 10),
-        // Editar + Excluir
         Row(
           mainAxisAlignment: MainAxisAlignment.end,
           children: [
             FilledButton.icon(
               style: _filledPrimaryStyle,
-              onPressed: () => setState(() {
-                _editingProfile = true;
-                // Ao entrar no modo de edição, o próximo onChanged destrava o latch
-              }),
+              onPressed: () => setState(() => _editingProfile = true),
               icon: const Icon(Icons.edit_outlined),
               label: const Text('Editar'),
             ),
@@ -708,6 +781,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             TextFormField(
               controller: _profTelefone,
+              inputFormatters: [_telefoneMask],
               decoration: const InputDecoration(
                 labelText: 'Telefone',
                 prefixIcon: Icon(Icons.phone_outlined),
@@ -722,21 +796,31 @@ class _SettingsPageState extends State<SettingsPage> {
                 prefixIcon: Icon(Icons.badge_outlined),
               ),
             ),
+            TextFormField(
+              controller: _profCpfCnpj,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                _cpfCnpjFormatter,
+              ],
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'CPF ou CNPJ (profissional)',
+                prefixIcon: Icon(Icons.badge_outlined),
+              ),
+              validator: _cpfCnpjValidator,
+              onChanged: (_) {
+                _formKey.currentState?.validate();
+                setState(() {});
+              },
+            ),
           ]),
           const SizedBox(height: 12),
-          // ORDEM INVERTIDA: Número vem ANTES de Logradouro
           _grid([
-            // CEP (com loader no suffix e busca automática igual Home)
             Focus(
               focusNode: _cepFocus,
               child: TextFormField(
                 controller: _cep,
                 keyboardType: TextInputType.number,
-                onChanged: (_) {
-                  // usuário mexeu -> pode tentar novamente
-                  _cepUserEdited = true;
-                  _cepLookupLatched = false;
-                },
                 decoration: InputDecoration(
                   labelText: 'CEP',
                   prefixIcon: const Icon(Icons.location_on_outlined),
@@ -810,15 +894,19 @@ class _SettingsPageState extends State<SettingsPage> {
                         _profNome.text = p.nome;
                         _profTelefone.text = p.telefone;
                         _profSegmento.text = p.segmento;
+                        try {
+                          final any = p as dynamic;
+                          final doc = (any.cpfCnpj ?? '').toString();
+                          _profCpfCnpj.text = doc;
+                          _profCpfCnpj.selection = TextSelection.collapsed(
+                              offset: _profCpfCnpj.text.length);
+                        } catch (_) {}
                         _logradouro.text = p.logradouro;
                         _numero.text = p.numero;
                         _bairro.text = p.bairro;
                         _cidade.text = p.cidade;
                         _uf.text = p.uf;
                         _cep.text = p.cep;
-                        // cancelar: trava novamente até o próximo onChanged
-                        _cepLookupLatched = false;
-                        _cepUserEdited = false;
                       });
                     },
                     icon: const Icon(Icons.close),
@@ -846,5 +934,62 @@ class _SettingsPageState extends State<SettingsPage> {
         children: children,
       );
     });
+  }
+}
+
+// ----------------- Formatters auxiliares -----------------
+class _CpfCnpjDynamicFormatter extends TextInputFormatter {
+  // Formata dinamicamente: até 11 dígitos => CPF; 12–14 => CNPJ
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    String masked = digits;
+    if (digits.length <= 11) {
+      // CPF: 000.000.000-00
+      final b = StringBuffer();
+      for (int i = 0; i < digits.length && i < 11; i++) {
+        if (i == 3 || i == 6) b.write('.');
+        if (i == 9) b.write('-');
+        b.write(digits[i]);
+      }
+      masked = b.toString();
+    } else {
+      // CNPJ: 00.000.000/0000-00
+      final b = StringBuffer();
+      for (int i = 0; i < digits.length && i < 14; i++) {
+        if (i == 2 || i == 5) b.write('.');
+        if (i == 8) b.write('/');
+        if (i == 12) b.write('-');
+        b.write(digits[i]);
+      }
+      masked = b.toString();
+    }
+    return TextEditingValue(
+      text: masked,
+      selection: TextSelection.collapsed(offset: masked.length),
+    );
+  }
+}
+
+class _TelefoneMask extends TextInputFormatter {
+  // (##) #####-#### — adapta com 8/9 dígitos finais
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final d = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    final b = StringBuffer();
+    for (int i = 0; i < d.length && i < 11; i++) {
+      if (i == 0) b.write('(');
+      if (i == 2) b.write(') ');
+      if (i == 7 && d.length >= 11) b.write('-');
+      if (i == 6 && d.length < 11) b.write('-');
+      b.write(d[i]);
+    }
+    final t = b.toString();
+    return TextEditingValue(
+      text: t,
+      selection: TextSelection.collapsed(offset: t.length),
+    );
   }
 }
