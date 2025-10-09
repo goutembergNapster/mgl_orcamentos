@@ -1,7 +1,7 @@
 name: orcamento_app
 description: App de orçamentos com PDF, login local e integração n8n.
 publish_to: "none"
-version: 1.0.0+1
+version: 1.0.0+2
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
